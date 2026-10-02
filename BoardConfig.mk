@@ -25,7 +25,7 @@ ALLOW_MISSING_DEPENDENCIES := true
 TARGET_ARCH := arm64
 TARGET_ARCH_VARIANT := armv8-a
 TARGET_CPU_ABI := arm64-v8a
-TARGET_CPU_ABI2 := 
+TARGET_CPU_ABI2 :=
 TARGET_CPU_VARIANT := generic
 TARGET_CPU_VARIANT_RUNTIME := cortex-a53
 
@@ -96,7 +96,7 @@ TARGET_COPY_OUT_VENDOR := vendor
 BOARD_SUPER_PARTITION_SIZE := 9656598528
 BOARD_SUPER_PARTITION_GROUPS := main
 BOARD_MAIN_SIZE := 9652404224 # (BOARD_SUPER_PARTITION_SIZE - 4MB)
-BOARD_MAIN_PARTITION_LIST :=  system system_ext product vendor
+BOARD_MAIN_PARTITION_LIST := system system_ext product vendor
 
 # AVB - Android Verified Boot
 BOARD_AVB_ENABLE := true
@@ -124,7 +124,7 @@ TW_NO_FASTBOOT_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery.fstab
 TARGET_VENDOR_PROP := $(DEVICE_PATH)/vendor.prop
 
-#keymaster
+# Keymaster
 TW_FORCE_KEYMASTER_VER := true
 
 # Resolution
@@ -153,7 +153,8 @@ TW_EXCLUDE_APEX := true
 TW_EXCLUDE_PYTHON := true
 TW_EXCLUDE_NANO := true
 TW_EXCLUDE_TWRPAPP := true
-TW_EXCLUDE_TZDATA := true
+# Keep timezone data: without it named time zones fall back to UTC.
+TW_EXCLUDE_TZDATA := false
 TW_EXCLUDE_BASH := true
 TW_EXCLUDE_LPTOOLS := true
 TW_EXCLUDE_LPDUMP := true
@@ -161,7 +162,7 @@ TW_EXCLUDE_LPDUMP := true
 # resetprop and magiskboot
 TW_INCLUDE_RESETPROP := true
 TW_INCLUDE_REPACKTOOLS := true
-TW_INCLUDE_LIBRESETPROP :=true
+TW_INCLUDE_LIBRESETPROP := true
 
 # Debug
 TWRP_INCLUDE_LOGCAT := true
