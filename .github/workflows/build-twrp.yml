@@ -48,7 +48,6 @@ jobs:
             bc \
             bison \
             build-essential \
-            ccache \
             curl \
             flex \
             gcc-multilib \
@@ -125,22 +124,10 @@ jobs:
           set -o pipefail
           cd "$GITHUB_WORKSPACE/src"
           export ALLOW_MISSING_DEPENDENCIES=true
-          export USE_CCACHE=1
-          export CCACHE_EXEC=/usr/bin/ccache
-          export CCACHE_DIR="$RUNNER_TEMP/ccache"
-          mkdir -p "$CCACHE_DIR"
-          ccache -M 5G
-          ccache -z
           source build/envsetup.sh
           lunch twrp_Neo2-eng
           mka bootimage -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - name: Show ccache stats
-        if: always()
-        shell: bash
-        run: |
-          export CCACHE_DIR="$RUNNER_TEMP/ccache"
-          ccache -s || true
 
       - name: Collect build info
         if: always()
