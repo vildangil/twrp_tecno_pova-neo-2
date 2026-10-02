@@ -1,0 +1,170 @@
+name: Build TWRP
+
+on:
+  workflow_dispatch:
+    inputs:
+      tree_ref:
+        description: Device tree branch/tag/commit to build
+        required: true
+        default: fix/usb-time
+      manifest_branch:
+        description: TWRP manifest branch
+        required: true
+        default: twrp-12.1
+
+permissions:
+  contents: read
+
+env:
+  DEVICE: Neo2
+  DEVICE_PATH: device/tecno/Neo2
+  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
+
+jobs:
+  build:
+    name: Build boot.img
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -eux
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            gcc-multilib \
+            g++-multilib \
+            git \
+            git-lfs \
+            gnupg \
+            lib32ncurses-dev \
+            lib32z1-dev \
+            libc6-dev-i386 \
+            libgl1-mesa-dev \
+            liblz4-tool \
+            libssl-dev \
+            libxml2-utils \
+            lzop \
+            python3 \
+            rsync \
+            unzip \
+            x11proto-core-dev \
+            xsltproc \
+            zip \
+            zlib1g-dev
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Install repo tool
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p "$HOME/bin"
+          curl -L https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod +x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Sync TWRP sources
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p "$GITHUB_WORKSPACE/src"
+          cd "$GITHUB_WORKSPACE/src"
+          "$HOME/bin/repo" init \
+            --depth=1 \
+            -u "$MANIFEST_URL" \
+            -b "${{ inputs.manifest_branch }}"
+          "$HOME/bin/repo" sync \
+            -c \
+            --force-sync \
+            --no-clone-bundle \
+            --no-tags \
+            -j4
+          df -h
+
+      - name: Checkout LG6n device tree
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tree_ref }}
+          path: src/device/tecno/Neo2
+          fetch-depth: 1
+
+      - name: Show device tree revision
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE/src/device/tecno/Neo2"
+          git log -1 --oneline
+          git status --short
+
+      - name: Build TWRP boot image
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$GITHUB_WORKSPACE/src"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export USE_CCACHE=1
+          export CCACHE_EXEC=/usr/bin/ccache
+          ccache -M 5G
+          source build/envsetup.sh
+          lunch twrp_Neo2-eng
+          mka bootimage -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Collect build info
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "tree_ref=${{ inputs.tree_ref }}"
+            echo "manifest_branch=${{ inputs.manifest_branch }}"
+            echo "runner=${{ runner.os }}"
+            echo
+            if [ -f "$GITHUB_WORKSPACE/src/out/target/product/Neo2/boot.img" ]; then
+              ls -lh "$GITHUB_WORKSPACE/src/out/target/product/Neo2/boot.img"
+              sha256sum "$GITHUB_WORKSPACE/src/out/target/product/Neo2/boot.img"
+            fi
+          } | tee "$GITHUB_WORKSPACE/build-info.txt"
+
+      - name: Upload boot image
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP-LG6n-${{ github.run_number }}
+          path: |
+            src/out/target/product/Neo2/boot.img
+            build-info.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP-LG6n-build-log-${{ github.run_number }}
+          path: |
+            build.log
+            build-info.txt
+          if-no-files-found: warn
+          retention-days: 14
