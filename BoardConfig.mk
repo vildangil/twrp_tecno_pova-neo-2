@@ -153,8 +153,9 @@ TW_EXCLUDE_APEX := true
 TW_EXCLUDE_PYTHON := true
 TW_EXCLUDE_NANO := true
 TW_EXCLUDE_TWRPAPP := true
-# Keep timezone data: without it named time zones fall back to UTC.
-TW_EXCLUDE_TZDATA := false
+# Keep recovery within the 32 MiB boot partition.
+# RTC/date fallback is handled by recovery-time-fix.sh; full tzdata is too large here.
+TW_EXCLUDE_TZDATA := true
 TW_EXCLUDE_BASH := true
 TW_EXCLUDE_LPTOOLS := true
 TW_EXCLUDE_LPDUMP := true
