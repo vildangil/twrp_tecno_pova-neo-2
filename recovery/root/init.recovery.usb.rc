@@ -1,17 +1,17 @@
-# Copyright (c) 2020, The Linux Foundation. All rights reserved.
-#
 # TECNO LG6n / MT6768 recovery USB configuration.
-# Keep this file in sync with the stock vendor USB controller properties.
+#
+# Keep the MTK-specific controller setup here, but let TWRP's stock
+# recovery init handle ADB / sideload / fastboot. Duplicating those
+# configfs handlers can race when both try to bind the same UDC.
 
 on early-init
-    # The stock LG6n kernel exposes the MTK gadget controller as musb-hdrc.
     write /sys/module/musb_hdrc/parameters/kernel_init_done 1
-    write /sys/class/udc/musb-hdrc/device/cmode 2
 
 on init
+    # LG6n uses the MTK MUSB configfs gadget controller.
     setprop sys.usb.configfs 1
-    setprop sys.usb.ffs.aio_compat 0
     setprop sys.usb.controller "musb-hdrc"
+    setprop sys.usb.ffs.aio_compat 0
 
     setprop vendor.usb.controller "musb-hdrc"
     setprop vendor.usb.vid "0x0E8D"
@@ -21,108 +21,75 @@ on init
     setprop vendor.usb.acm_port1 ""
     setprop vendor.usb.acm_enable 0
 
-# Prefer a bootloader supplied controller when one actually exists.
-on property:ro.boot.usbcontroller=*
-    setprop sys.usb.controller ${ro.boot.usbcontroller}
-    setprop vendor.usb.controller ${ro.boot.usbcontroller}
-
-on fs
-    mkdir /config
-    mkdir /dev/usb-ffs 0770 shell shell
-    mkdir /dev/usb-ffs/adb 0770 shell shell
-
-    mount configfs none /config
-
-    mkdir /config/usb_gadget/g1 0770 shell shell
-    mkdir /config/usb_gadget/g1/strings/0x409 0770 shell shell
-    write /config/usb_gadget/g1/bcdDevice 0x0223
-    write /config/usb_gadget/g1/bcdUSB 0x0200
-    write /config/usb_gadget/g1/os_desc/use 1
-    write /config/usb_gadget/g1/strings/0x409/serialnumber ${ro.serialno}
-    write /config/usb_gadget/g1/strings/0x409/manufacturer ${ro.product.manufacturer}
-    write /config/usb_gadget/g1/strings/0x409/product ${ro.product.model}
-
+# TWRP's base init creates g1, ffs.adb and configs/b.1 during "fs".
+# Add only the MTK/TWRP functions it does not create after that stage.
+on post-fs
     mkdir /config/usb_gadget/g1/functions/mass_storage.usb0
-    mkdir /config/usb_gadget/g1/functions/ffs.adb
     mkdir /config/usb_gadget/g1/functions/mtp.gs0
     write /config/usb_gadget/g1/functions/mtp.gs0/os_desc/interface.MTP/compatible_id "MTP"
 
-    mkdir /config/usb_gadget/g1/configs/b.1 0770 shell shell
-    mkdir /config/usb_gadget/g1/configs/b.1/strings/0x409 0770 shell shell
+    write /config/usb_gadget/g1/bcdDevice 0x0223
+    write /config/usb_gadget/g1/bcdUSB 0x0200
     write /config/usb_gadget/g1/configs/b.1/MaxPower 500
+
+    write /config/usb_gadget/g1/os_desc/use 1
     write /config/usb_gadget/g1/os_desc/b_vendor_code 0x1
     write /config/usb_gadget/g1/os_desc/qw_sign "MSFT100"
     symlink /config/usb_gadget/g1/configs/b.1 /config/usb_gadget/g1/os_desc/b.1
 
-    mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000
-
-on property:init.svc.adbd=stopped
-    setprop sys.usb.ffs.ready 0
-
+# Clean up any previous composite configuration before switching functions.
 on property:sys.usb.config=none && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/UDC "none"
-    stop adbd
-    setprop sys.usb.ffs.ready 0
-    setprop sys.usb.ffs.mtp.ready 0
-    write /config/usb_gadget/g1/bDeviceClass 0
-    write /config/usb_gadget/g1/bDeviceSubClass 0
-    write /config/usb_gadget/g1/bDeviceProtocol 0
     rm /config/usb_gadget/g1/configs/b.1/f1
     rm /config/usb_gadget/g1/configs/b.1/f2
-    write /sys/class/udc/musb-hdrc/device/saving 0
-    setprop sys.usb.state ${sys.usb.config}
+    setprop sys.usb.ffs.mtp.ready 0
 
-# ADB
+# Prepare the standard TWRP ADB identity. The base recovery init performs
+# the actual ffs.adb symlink and UDC bind once sys.usb.ffs.ready becomes 1.
 on property:sys.usb.config=adb && property:sys.usb.configfs=1
-    setprop vendor.usb.pid "0x201C"
-    start adbd
-
-on property:sys.usb.ffs.ready=1 && property:sys.usb.config=adb && property:sys.usb.configfs=1
-    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "adb"
-    write /config/usb_gadget/g1/idVendor ${vendor.usb.vid}
-    write /config/usb_gadget/g1/idProduct ${vendor.usb.pid}
-    write /config/usb_gadget/g1/os_desc/use 1
-    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f1
-    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
-    setprop sys.usb.state ${sys.usb.config}
-
-# ADB sideload uses the standard recovery VID/PID.
-on property:sys.usb.config=sideload && property:sys.usb.configfs=1
-    start adbd
-
-on property:sys.usb.ffs.ready=1 && property:sys.usb.config=sideload && property:sys.usb.configfs=1
-    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "sideload"
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
     write /config/usb_gadget/g1/idVendor 0x18d1
     write /config/usb_gadget/g1/idProduct 0xd001
-    write /config/usb_gadget/g1/os_desc/use 1
-    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f1
-    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
-    setprop sys.usb.state ${sys.usb.config}
+    start adbd
 
-# MTP
+on property:sys.usb.config=sideload && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/idVendor 0x18d1
+    write /config/usb_gadget/g1/idProduct 0xd001
+    start adbd
+
+# MTP only.
 on property:sys.usb.config=mtp && property:sys.usb.configfs=1
-    setprop vendor.usb.pid "0x2008"
-    setprop sys.usb.ffs.mtp.ready 1
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp"
-    write /config/usb_gadget/g1/idVendor ${vendor.usb.vid}
-    write /config/usb_gadget/g1/idProduct ${vendor.usb.pid}
+    write /config/usb_gadget/g1/idVendor 0x0E8D
+    write /config/usb_gadget/g1/idProduct 0x2008
     write /config/usb_gadget/g1/os_desc/use 1
     symlink /config/usb_gadget/g1/functions/mtp.gs0 /config/usb_gadget/g1/configs/b.1/f1
-    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    write /config/usb_gadget/g1/UDC "musb-hdrc"
+    setprop sys.usb.ffs.mtp.ready 1
     setprop sys.usb.state ${sys.usb.config}
 
-# MTP + ADB
+# MTP + ADB.
 on property:sys.usb.config=mtp,adb && property:sys.usb.configfs=1
-    setprop vendor.usb.pid "0x201D"
     start adbd
 
 on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mtp,adb && property:sys.usb.configfs=1
-    setprop sys.usb.ffs.mtp.ready 1
+    write /config/usb_gadget/g1/UDC "none"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
     write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp_adb"
-    write /config/usb_gadget/g1/idVendor ${vendor.usb.vid}
-    write /config/usb_gadget/g1/idProduct ${vendor.usb.pid}
+    write /config/usb_gadget/g1/idVendor 0x0E8D
+    write /config/usb_gadget/g1/idProduct 0x201D
     write /config/usb_gadget/g1/os_desc/use 1
     symlink /config/usb_gadget/g1/functions/mtp.gs0 /config/usb_gadget/g1/configs/b.1/f1
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f2
-    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    write /config/usb_gadget/g1/UDC "musb-hdrc"
+    setprop sys.usb.ffs.mtp.ready 1
     setprop sys.usb.state ${sys.usb.config}
