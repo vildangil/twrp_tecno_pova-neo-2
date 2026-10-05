@@ -48,6 +48,7 @@ jobs:
             bc \
             bison \
             build-essential \
+            ccache \
             curl \
             flex \
             gcc-multilib \
@@ -118,16 +119,39 @@ jobs:
           git log -1 --oneline
           git status --short
 
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: src/.ccache
+          key: twrp-ccache-${{ runner.os }}-${{ inputs.manifest_branch }}-v1-${{ github.run_number }}
+          restore-keys: |
+            twrp-ccache-${{ runner.os }}-${{ inputs.manifest_branch }}-v1-
+
       - name: Build TWRP boot image
         shell: bash
         run: |
           set -o pipefail
           cd "$GITHUB_WORKSPACE/src"
           export ALLOW_MISSING_DEPENDENCIES=true
+          export USE_CCACHE=1
+          export CCACHE_EXEC=/usr/bin/ccache
+          export CCACHE_DIR="$GITHUB_WORKSPACE/src/.ccache"
+          export CCACHE_BASEDIR="$GITHUB_WORKSPACE/src"
+          mkdir -p "$CCACHE_DIR"
+          ccache --set-config=max_size=6G
+          ccache --set-config=compression=true
+          ccache --set-config=compression_level=3
+          ccache -z
           source build/envsetup.sh
           lunch twrp_Neo2-eng
           mka bootimage -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
+      - name: Show compiler cache stats
+        if: always()
+        shell: bash
+        run: |
+          export CCACHE_DIR="$GITHUB_WORKSPACE/src/.ccache"
+          ccache -s || true
 
       - name: Collect build info
         if: always()
